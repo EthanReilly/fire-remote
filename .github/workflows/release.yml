@@ -1,10 +1,16 @@
 name: Release
 
-# Pushing a tag like v2.4 publishes a GitHub release with FireRemote.apk attached.
+# Publishes a GitHub release with FireRemote.apk attached.
+# - Actions tab > Release > "Run workflow": releases the version in AndroidManifest.xml.
+# - Or push a tag like v2.4.
+# - Or create a release on the website: the APK is attached to it automatically.
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v*"
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -18,9 +24,18 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
         run: |
-          VERSION="${TAG#v}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION=$(grep -o 'android:versionName="[^"]*"' AndroidManifest.xml | cut -d'"' -f2)
+            TAG="v$VERSION"
+          elif [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+            VERSION="${TAG#v}"
+          else
+            TAG="${{ github.ref_name }}"
+            VERSION="${TAG#v}"
+          fi
+
           cat > notes.md <<NOTES
           ## Install
 
@@ -29,7 +44,12 @@ jobs:
 
           See the [README](https://github.com/${GITHUB_REPOSITORY}#readme) for setup and features.
           NOTES
-          gh release create "$TAG" FireRemote.apk \
-            --title "Fire Remote $VERSION" \
-            --notes-file notes.md \
-            --verify-tag
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" FireRemote.apk --clobber
+          else
+            gh release create "$TAG" FireRemote.apk \
+              --title "Fire Remote $VERSION" \
+              --notes-file notes.md \
+              --target "${{ github.sha }}"
+          fi
