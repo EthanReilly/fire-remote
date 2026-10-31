@@ -88,19 +88,58 @@ final class RemoteButton extends View {
         if (onPress != null) onPress.onPress();
     }
 
+    /** With a long-press action the tap fires on release, so holding doesn't also trigger it. */
+    RemoteButton onLongPress(OnPress p) {
+        onLong = p;
+        return this;
+    }
+
+    private OnPress onLong;
+    private boolean longFired;
+    private final Runnable longRunner = new Runnable() {
+        @Override
+        public void run() {
+            if (!pressedNow) return;
+            longFired = true;
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            if (onLong != null) onLong.onPress();
+        }
+    };
+
     @Override
     public boolean onTouchEvent(MotionEvent e) {
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 pressedNow = true;
+                longFired = false;
                 invalidate();
-                fire(true);
-                if (repeat) postDelayed(repeater, 450);
+                if (onLong != null) {
+                    postDelayed(longRunner, 500);
+                } else {
+                    fire(true);
+                    if (repeat) postDelayed(repeater, 450);
+                }
+                return true;
+            case MotionEvent.ACTION_MOVE:
+                if (onLong != null && pressedNow) {
+                    float x = e.getX(), y = e.getY(), slop = Theme.dp(getContext(), 16);
+                    if (x < -slop || y < -slop || x > getWidth() + slop || y > getHeight() + slop) {
+                        pressedNow = false;
+                        removeCallbacks(longRunner);
+                        invalidate();
+                    }
+                }
                 return true;
             case MotionEvent.ACTION_UP:
+                if (onLong != null && pressedNow && !longFired) {
+                    removeCallbacks(longRunner);
+                    fire(true);
+                }
+                // fall through
             case MotionEvent.ACTION_CANCEL:
                 pressedNow = false;
                 removeCallbacks(repeater);
+                removeCallbacks(longRunner);
                 invalidate();
                 return true;
             default:
@@ -130,7 +169,14 @@ final class RemoteButton extends View {
         if (icon != 0) {
             Icons.draw(c, icon, w / 2f, h / 2f, Math.min(w, h) * 0.42f * scale, fg);
         } else if (label != null) {
-            textPaint.setTextSize(Theme.sp(getContext(), labelSp) * scale);
+            float size = Theme.sp(getContext(), labelSp);
+            textPaint.setTextSize(size);
+            float avail = w - Theme.dp(getContext(), 10);
+            while (size > Theme.sp(getContext(), 9) && textPaint.measureText(label) > avail) {
+                size -= Theme.sp(getContext(), 0.5f);
+                textPaint.setTextSize(size);
+            }
+            textPaint.setTextSize(size * scale);
             float y = h / 2f - (textPaint.descent() + textPaint.ascent()) / 2f;
             c.drawText(label, w / 2f, y, textPaint);
         }

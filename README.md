@@ -8,7 +8,8 @@ An Android phone app that controls an Amazon Fire TV / Fire Stick over Wi-Fi —
 - **Instant response.** Presses are sent over one persistent connection.
 - **Swipe touchpad** (swipe to move, tap to select, hold for options) or a classic **D-pad**.
 - Back, Home, Menu, Play/Pause, Rewind, Fast forward, Sleep/Wake.
-- One-tap **YouTube** and **Stremio** buttons, plus an Apps pop-up (Prime Video, Netflix, Disney+, BBC iPlayer, Spotify, and every installed app).
+- **Editable favourites bar:** up to 4 one-tap app buttons (YouTube and Stremio by default). Tap **+** to add one from the apps installed on your TV; hold a favourite to change, move or remove it.
+- An Apps pop-up lists every installed app.
 - **Find on Wi-Fi** locates the Fire TV automatically and wakes it if it's asleep.
 - Fits on one screen, with no scrolling.
 - **Optional volume & typing link** (ADB): enables volume control and live typing into search boxes. You accept the TV's prompt using the app's own touchpad.

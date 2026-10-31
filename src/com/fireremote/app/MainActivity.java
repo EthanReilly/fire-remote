@@ -234,23 +234,9 @@ public class MainActivity extends Activity {
                 new RemoteButton(this, Icons.VOL_UP, null, false).describe("Volume up")
                         .repeatWhileHeld().onPress(volumePress(true))),
                 lp(-1, h, 0, 10, 0, 0));
-        root.addView(threeRow(
-                new RemoteButton(this, 0, "YouTube", false).labelSize(15)
-                        .colors(0xFFE62117, 0xFFB8160F, 0xFFFFFFFF).describe("Open YouTube")
-                        .onPress(appPress("YouTube", "com.amazon.firetv.youtube",
-                                "com.google.android.youtube.tv", "com.amazon.firetv.youtube.tv")),
-                new RemoteButton(this, 0, "Stremio", false).labelSize(15)
-                        .colors(0xFF7B5BF5, 0xFF5E43CF, 0xFFFFFFFF).describe("Open Stremio")
-                        .onPress(appPress("Stremio", "com.stremio.one")),
-                new RemoteButton(this, 0, "Apps", false).labelSize(15)
-                        .colors(Theme.SURFACE_HIGH, Theme.SURFACE_PRESSED, Theme.TEXT).describe("More apps")
-                        .onPress(new RemoteButton.OnPress() {
-                            @Override
-                            public void onPress() {
-                                showAppsSheet();
-                            }
-                        })),
-                lp(-1, h, 0, 10, 0, 0));
+        favRow = row();
+        root.addView(favRow, lp(-1, h, 0, 10, 0, 0));
+        refreshFavourites();
         return root;
     }
 
@@ -347,6 +333,9 @@ public class MainActivity extends Activity {
         box.setOrientation(LinearLayout.VERTICAL);
         int p = dpi(18);
         box.setPadding(p, dpi(6), p, 0);
+        TextView tip = text("Tip: hold a favourite at the bottom of the screen to change, move or remove it. "
+                + "Tap + to add one (up to 4).", 12.5f, Theme.MUTED, false);
+        box.addView(tip, lp(-1, -2, 0, 0, 0, 12));
         final AlertDialog[] holder = new AlertDialog[1];
         String[][] apps = {
                 {"Prime Video", "com.amazon.cloud9", "com.amazon.avod"},
@@ -998,6 +987,255 @@ public class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    // ================================================================== favourites bar
+
+    private static final int MAX_FAVS = 4;
+    private LinearLayout favRow;
+
+    /** Known apps: name, colour, package names to try in order. */
+    private static final Object[][] PRESETS = {
+            {"YouTube", 0xFFE62117, new String[]{"com.amazon.firetv.youtube", "com.google.android.youtube.tv",
+                    "com.amazon.firetv.youtube.tv"}},
+            {"Stremio", 0xFF7B5BF5, new String[]{"com.stremio.one"}},
+            {"Netflix", 0xFFB20710, new String[]{"com.netflix.ninja"}},
+            {"Prime Video", 0xFF1A98FF, new String[]{"com.amazon.cloud9", "com.amazon.avod"}},
+            {"Disney+", 0xFF113CCF, new String[]{"com.disney.disneyplus"}},
+            {"BBC iPlayer", 0xFFE6007E, new String[]{"uk.co.bbc.iplayer", "bbc.iplayer.android"}},
+            {"Spotify", 0xFF1DB954, new String[]{"com.spotify.tv.android"}},
+            {"Plex", 0xFFE5A00D, new String[]{"com.plexapp.android"}},
+            {"Kodi", 0xFF17B2E7, new String[]{"org.xbmc.kodi"}},
+            {"Twitch", 0xFF9146FF, new String[]{"tv.twitch.android.viewer", "tv.twitch.android.app"}},
+            {"RTÉ Player", 0xFF00A3AD, new String[]{"ie.rte.player", "com.rte.player"}},
+            {"ITVX", 0xFF102C3D, new String[]{"air.ITVMobilePlayer"}},
+            {"Channel 4", 0xFF6A6A6A, new String[]{"com.channel4.ondemand"}},
+            {"NOW", 0xFF00818A, new String[]{"com.bskyb.nowtv.beta"}},
+            {"Apple TV", 0xFF3A3A3C, new String[]{"com.apple.atve.amazon.appletv"}},
+    };
+    private static final int[] PALETTE = {0xFF2E7D6B, 0xFF7A4FB5, 0xFFB5562F, 0xFF2F6DB5, 0xFF9C2F5C, 0xFF5C7A2F};
+
+    private static final class Fav {
+        String name;
+        String[] pkgs;
+        int color;
+
+        Fav(String name, String[] pkgs, int color) {
+            this.name = name;
+            this.pkgs = pkgs;
+            this.color = color;
+        }
+    }
+
+    private List<Fav> loadFavs() {
+        List<Fav> out = new ArrayList<Fav>();
+        String raw = prefs.getString("favs", null);
+        if (raw == null) {
+            out.add(presetFav(0));
+            out.add(presetFav(1));
+            return out;
+        }
+        try {
+            JSONArray a = new JSONArray(raw);
+            for (int i = 0; i < a.length() && out.size() < MAX_FAVS; i++) {
+                JSONObject o = a.getJSONObject(i);
+                JSONArray p = o.getJSONArray("pkgs");
+                String[] pkgs = new String[p.length()];
+                for (int j = 0; j < pkgs.length; j++) pkgs[j] = p.getString(j);
+                out.add(new Fav(o.getString("name"), pkgs, o.getInt("color")));
+            }
+        } catch (Exception ignored) {
+        }
+        return out;
+    }
+
+    private void saveFavs(List<Fav> favs) {
+        JSONArray a = new JSONArray();
+        try {
+            for (Fav f : favs) {
+                JSONObject o = new JSONObject();
+                o.put("name", f.name);
+                JSONArray p = new JSONArray();
+                for (String pkg : f.pkgs) p.put(pkg);
+                o.put("pkgs", p);
+                o.put("color", f.color);
+                a.put(o);
+            }
+        } catch (Exception ignored) {
+        }
+        prefs.edit().putString("favs", a.toString()).apply();
+    }
+
+    private static Fav presetFav(int i) {
+        return new Fav((String) PRESETS[i][0], (String[]) PRESETS[i][2], (Integer) PRESETS[i][1]);
+    }
+
+    /** Colour for an app: its brand colour if known, otherwise a stable pick from the palette. */
+    private static int colorFor(String name, String pkg) {
+        for (Object[] p : PRESETS) {
+            if (((String) p[0]).equalsIgnoreCase(name)) return (Integer) p[1];
+            for (String k : (String[]) p[2]) if (k.equals(pkg)) return (Integer) p[1];
+        }
+        return PALETTE[Math.abs((pkg != null ? pkg : name).hashCode()) % PALETTE.length];
+    }
+
+    private void refreshFavourites() {
+        favRow.removeAllViews();
+        final List<Fav> favs = loadFavs();
+        for (int i = 0; i < favs.size(); i++) {
+            final int index = i;
+            Fav f = favs.get(i);
+            RemoteButton b = new RemoteButton(this, 0, f.name, false).labelSize(favs.size() > 3 ? 13 : 15)
+                    .colors(f.color, darker(f.color), 0xFFFFFFFF)
+                    .describe("Open " + f.name + ". Hold to change.")
+                    .onPress(appPress(f.name, f.pkgs))
+                    .onLongPress(new RemoteButton.OnPress() {
+                        @Override
+                        public void onPress() {
+                            editFavourite(index);
+                        }
+                    });
+            favRow.addView(b, lp(0, -1, i == 0 ? 0 : 4, 0, 4, 0, 1f));
+        }
+        if (favs.size() < MAX_FAVS) {
+            favRow.addView(new RemoteButton(this, Icons.PLUS, null, false).describe("Add a favourite app")
+                    .colors(Theme.SURFACE, Theme.SURFACE_PRESSED, Theme.MUTED)
+                    .onPress(new RemoteButton.OnPress() {
+                        @Override
+                        public void onPress() {
+                            pickApp(-1);
+                        }
+                    }), lp(dpi(52), -1, favs.isEmpty() ? 0 : 4, 0, 4, 0));
+        }
+        favRow.addView(new RemoteButton(this, Icons.GRID, null, false).describe("All apps")
+                .colors(Theme.SURFACE_HIGH, Theme.SURFACE_PRESSED, Theme.TEXT)
+                .onPress(new RemoteButton.OnPress() {
+                    @Override
+                    public void onPress() {
+                        showAppsSheet();
+                    }
+                }), lp(dpi(52), -1, 4, 0, 0, 0));
+    }
+
+    private static int darker(int c) {
+        int r = (int) (((c >> 16) & 0xff) * 0.78), g = (int) (((c >> 8) & 0xff) * 0.78), b = (int) ((c & 0xff) * 0.78);
+        return 0xFF000000 | (r << 16) | (g << 8) | b;
+    }
+
+    private void editFavourite(final int index) {
+        final List<Fav> favs = loadFavs();
+        if (index >= favs.size()) return;
+        final List<String> labels = new ArrayList<String>();
+        labels.add("Change app");
+        if (index > 0) labels.add("Move left");
+        if (index < favs.size() - 1) labels.add("Move right");
+        labels.add("Remove");
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle(favs.get(index).name)
+                .setItems(labels.toArray(new String[0]), new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        String choice = labels.get(which);
+                        if (choice.equals("Change app")) {
+                            pickApp(index);
+                            return;
+                        }
+                        if (choice.equals("Move left")) Collections.swap(favs, index, index - 1);
+                        else if (choice.equals("Move right")) Collections.swap(favs, index, index + 1);
+                        else favs.remove(index);
+                        saveFavs(favs);
+                        refreshFavourites();
+                    }
+                })
+                .show();
+    }
+
+    /** Chooses an app for slot {@code index} (-1 = add new). Lists the TV's apps when it can, else presets. */
+    private void pickApp(final int index) {
+        final LightningClient c = tv;
+        if (c == null || c.token() == null) {
+            showAppChoices(index, new ArrayList<String[]>());
+            return;
+        }
+        toast("Loading apps from your Fire TV…");
+        exec.execute(new Runnable() {
+            @Override
+            public void run() {
+                final List<String[]> apps = fetchApps(c);
+                onUi(new Runnable() {
+                    @Override
+                    public void run() {
+                        showAppChoices(index, apps);
+                    }
+                });
+            }
+        });
+    }
+
+    private void showAppChoices(final int index, List<String[]> tvApps) {
+        // name, color, packages...
+        final List<Fav> choices = new ArrayList<Fav>();
+        java.util.Set<String> seen = new java.util.HashSet<String>();
+        for (String[] a : tvApps) {
+            if (seen.add(a[1])) choices.add(new Fav(a[0], new String[]{a[1]}, colorFor(a[0], a[1])));
+        }
+        if (choices.isEmpty()) { // couldn't read the TV's list: offer the well-known apps
+            for (int i = 0; i < PRESETS.length; i++) choices.add(presetFav(i));
+        }
+        String[] labels = new String[choices.size() + 1];
+        for (int i = 0; i < choices.size(); i++) labels[i] = choices.get(i).name;
+        labels[choices.size()] = "Other app (type its package name)…";
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle(index < 0 ? "Add a favourite" : "Change favourite")
+                .setItems(labels, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        if (which == choices.size()) askPackageName(index);
+                        else setFavourite(index, choices.get(which));
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void askPackageName(final int index) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int p = dpi(20);
+        box.setPadding(p, dpi(8), p, 0);
+        final EditText name = new EditText(this);
+        styleField(name, 16);
+        name.setHint("Button name, e.g. Pluto TV");
+        box.addView(name, lp(-1, -2));
+        final EditText pkg = new EditText(this);
+        styleField(pkg, 16);
+        pkg.setHint("Package, e.g. tv.pluto.android");
+        pkg.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        box.addView(pkg, lp(-1, -2, 0, 10, 0, 0));
+        new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Other app")
+                .setView(box)
+                .setPositiveButton("Save", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        String n = name.getText().toString().trim();
+                        String k = pkg.getText().toString().trim();
+                        if (k.isEmpty()) return;
+                        if (n.isEmpty()) n = k.substring(k.lastIndexOf('.') + 1);
+                        setFavourite(index, new Fav(n, new String[]{k}, colorFor(n, k)));
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void setFavourite(int index, Fav f) {
+        List<Fav> favs = loadFavs();
+        if (f.name.length() > 14) f.name = f.name.substring(0, 13).trim() + "…";
+        if (index >= 0 && index < favs.size()) favs.set(index, f);
+        else if (favs.size() < MAX_FAVS) favs.add(f);
+        saveFavs(favs);
+        refreshFavourites();
     }
 
     // ================================================================== keyboard

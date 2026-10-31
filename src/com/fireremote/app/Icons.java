@@ -8,7 +8,7 @@ import android.graphics.RectF;
 /** Vector glyphs drawn on a 24x24 grid, so no image resources or icon fonts are needed. */
 final class Icons {
     static final int POWER = 1, HOME = 2, BACK = 3, MENU = 4, PLAY_PAUSE = 5, REWIND = 6, FAST_FORWARD = 7,
-            VOL_DOWN = 8, VOL_UP = 9, MUTE = 10, KEYBOARD = 11, GEAR = 12, WIFI = 13, CHEVRON = 14;
+            VOL_DOWN = 8, VOL_UP = 9, MUTE = 10, KEYBOARD = 11, GEAR = 12, WIFI = 13, CHEVRON = 14, GRID = 15, PLUS = 16;
 
     private Icons() {
     }
@@ -111,6 +111,15 @@ final class Icons {
                 p.moveTo(6, 15); p.lineTo(12, 9); p.lineTo(18, 15);
                 stroke.setStrokeWidth(2.6f);
                 c.drawPath(p, stroke);
+                break;
+            case GRID:
+                for (int i = 0; i < 3; i++) {
+                    for (int j = 0; j < 3; j++) c.drawCircle(6 + i * 6, 6 + j * 6, 1.9f, fill);
+                }
+                break;
+            case PLUS:
+                c.drawLine(12, 5, 12, 19, stroke);
+                c.drawLine(5, 12, 19, 12, stroke);
                 break;
             default:
                 break;
