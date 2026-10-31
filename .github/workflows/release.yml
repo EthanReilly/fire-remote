@@ -1,0 +1,35 @@
+name: Release
+
+# Pushing a tag like v2.4 publishes a GitHub release with FireRemote.apk attached.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          cat > notes.md <<NOTES
+          ## Install
+
+          Download **FireRemote.apk** below on your Android phone and open it. Allow installs from unknown sources if asked.
+          Updating? Install it over your current version and you'll stay paired.
+
+          See the [README](https://github.com/${GITHUB_REPOSITORY}#readme) for setup and features.
+          NOTES
+          gh release create "$TAG" FireRemote.apk \
+            --title "Fire Remote $VERSION" \
+            --notes-file notes.md \
+            --verify-tag
