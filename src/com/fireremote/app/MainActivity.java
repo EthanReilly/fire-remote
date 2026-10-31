@@ -695,7 +695,14 @@ public class MainActivity extends Activity {
         pin.requestFocus();
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        customHomeCheckedAt = 0; // re-check the TV's apps after returning to the app
+    }
+
     private void setConnected(String host) {
+        customHomeCheckedAt = 0;
         setStatus(ST_OK, "Connected to " + host);
         hideConnect();
     }
@@ -853,13 +860,40 @@ public class MainActivity extends Activity {
         send(new TvCall() {
             @Override
             public LightningClient.Response run(LightningClient c) throws IOException {
-                if (tryCustom) {
+                if (tryCustom && customHomeInstalled(c)) {
                     LightningClient.Response r = c.launchApp(CUSTOM_HOME);
                     if (r.ok()) return r;
                 }
                 return c.key("home");
             }
         }, null);
+    }
+
+    // Whether the ad-free Home app is on the TV. Fire OS answers "OK" to launching a missing app
+    // (and shows "App not found"), so check the TV's app list instead. Cached for 30 seconds.
+    private volatile Boolean customHomeCached;
+    private volatile long customHomeCheckedAt;
+
+    private boolean customHomeInstalled(LightningClient c) {
+        long now = System.currentTimeMillis();
+        Boolean cached = customHomeCached;
+        if (cached != null && now - customHomeCheckedAt < 30000) return cached;
+        List<String[]> apps = fetchApps(c);
+        boolean installed;
+        if (apps.isEmpty()) {
+            installed = cached != null ? cached : true; // couldn't read the list: keep last answer
+        } else {
+            installed = false;
+            for (String[] a : apps) {
+                if (CUSTOM_HOME.equals(a[1])) {
+                    installed = true;
+                    break;
+                }
+            }
+        }
+        customHomeCached = installed;
+        customHomeCheckedAt = now;
+        return installed;
     }
 
     private void powerPressed() {
