@@ -333,7 +333,7 @@ public class MainActivity extends Activity {
                         else if (which == 2) showConnect();
                         else {
                             prefs.edit().putBoolean("custom_home", !custom).apply();
-                            toast(!custom ? "Home opens your ad-free Home screen (if installed)."
+                            toast(!custom ? "Home opens your ad-free Home screen when it's installed."
                                     : "Home opens Amazon's home screen.");
                         }
                     }
@@ -695,14 +695,7 @@ public class MainActivity extends Activity {
         pin.requestFocus();
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        customHomeCheckedAt = 0; // re-check the TV's apps after returning to the app
-    }
-
     private void setConnected(String host) {
-        customHomeCheckedAt = 0;
         setStatus(ST_OK, "Connected to " + host);
         hideConnect();
     }
@@ -860,40 +853,36 @@ public class MainActivity extends Activity {
         send(new TvCall() {
             @Override
             public LightningClient.Response run(LightningClient c) throws IOException {
-                if (tryCustom && customHomeInstalled(c)) {
-                    LightningClient.Response r = c.launchApp(CUSTOM_HOME);
-                    if (r.ok()) return r;
-                }
+                if (tryCustom && askCustomHome(c.host)) return new LightningClient.Response(200, "");
                 return c.key("home");
             }
         }, null);
     }
 
-    // Whether the ad-free Home app is on the TV. Fire OS answers "OK" to launching a missing app
-    // (and shows "App not found"), so check the TV's app list instead. Cached for 30 seconds.
-    private volatile Boolean customHomeCached;
-    private volatile long customHomeCheckedAt;
+    /** Port the ad-free Home app listens on (see HomeRedirectService on the TV). */
+    private static final int CUSTOM_HOME_PORT = 47100;
 
-    private boolean customHomeInstalled(LightningClient c) {
-        long now = System.currentTimeMillis();
-        Boolean cached = customHomeCached;
-        if (cached != null && now - customHomeCheckedAt < 30000) return cached;
-        List<String[]> apps = fetchApps(c);
-        boolean installed;
-        if (apps.isEmpty()) {
-            installed = cached != null ? cached : true; // couldn't read the list: keep last answer
-        } else {
-            installed = false;
-            for (String[] a : apps) {
-                if (CUSTOM_HOME.equals(a[1])) {
-                    installed = true;
-                    break;
-                }
-            }
+    /**
+     * Asks the ad-free Home app on the TV to open itself. Returns false if it isn't installed or
+     * its Home button setting is off, so the caller can press Amazon's Home instead.
+     */
+    private static boolean askCustomHome(String host) {
+        java.net.Socket s = new java.net.Socket();
+        try {
+            s.connect(new java.net.InetSocketAddress(host, CUSTOM_HOME_PORT), 600);
+            s.setSoTimeout(1500);
+            java.io.OutputStream out = s.getOutputStream();
+            out.write("HOME\n".getBytes("UTF-8"));
+            out.flush();
+            java.io.BufferedReader in = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(s.getInputStream(), "UTF-8"));
+            String reply = in.readLine();
+            return reply != null && reply.trim().equals("OK");
+        } catch (Exception e) {
+            return false;
+        } finally {
+            try { s.close(); } catch (Exception ignored) { }
         }
-        customHomeCached = installed;
-        customHomeCheckedAt = now;
-        return installed;
     }
 
     private void powerPressed() {
