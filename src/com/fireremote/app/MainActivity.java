@@ -194,7 +194,13 @@ public class MainActivity extends Activity {
         int h = dpi(52);
         root.addView(threeRow(
                 new RemoteButton(this, Icons.BACK, null, false).describe("Back").onPress(keyPress("back")),
-                new RemoteButton(this, Icons.HOME, null, false).describe("Home").onPress(keyPress("home")),
+                new RemoteButton(this, Icons.HOME, null, false).describe("Home")
+                        .onPress(new RemoteButton.OnPress() {
+                            @Override
+                            public void onPress() {
+                                homePressed();
+                            }
+                        }),
                 new RemoteButton(this, Icons.MENU, null, false).describe("Menu").onPress(keyPress("menu"))),
                 lp(-1, h, 0, 12, 0, 0));
         root.addView(threeRow(
@@ -314,7 +320,9 @@ public class MainActivity extends Activity {
     }
 
     private void showMoreMenu() {
-        String[] items = {"Fire TV settings", "Volume & typing link", "Change Fire TV / re-pair"};
+        final boolean custom = prefs.getBoolean("custom_home", true);
+        String[] items = {"Fire TV settings", "Volume & typing link", "Change Fire TV / re-pair",
+                "Home button: " + (custom ? "ad-free Home" : "Amazon Home")};
         new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                 .setTitle("More")
                 .setItems(items, new DialogInterface.OnClickListener() {
@@ -322,7 +330,12 @@ public class MainActivity extends Activity {
                     public void onClick(DialogInterface dialog, int which) {
                         if (which == 0) launch("Settings", "settings");
                         else if (which == 1) typingDialog.show();
-                        else showConnect();
+                        else if (which == 2) showConnect();
+                        else {
+                            prefs.edit().putBoolean("custom_home", !custom).apply();
+                            toast(!custom ? "Home opens your ad-free Home screen (if installed)."
+                                    : "Home opens Amazon's home screen.");
+                        }
                     }
                 })
                 .show();
@@ -826,6 +839,27 @@ public class MainActivity extends Activity {
                 volume(up);
             }
         };
+    }
+
+    /** Package of the ad-free Home screen installed by the Fire Stick clean-up. */
+    private static final String CUSTOM_HOME = "com.firehome.launcher";
+
+    /**
+     * Opens the ad-free Home app directly when it's installed. Sending Fire OS's own Home key
+     * would show Amazon's home screen and make Android block other screens for 5 seconds.
+     */
+    private void homePressed() {
+        final boolean tryCustom = prefs.getBoolean("custom_home", true);
+        send(new TvCall() {
+            @Override
+            public LightningClient.Response run(LightningClient c) throws IOException {
+                if (tryCustom) {
+                    LightningClient.Response r = c.launchApp(CUSTOM_HOME);
+                    if (r.ok()) return r;
+                }
+                return c.key("home");
+            }
+        }, null);
     }
 
     private void powerPressed() {
