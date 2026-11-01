@@ -72,6 +72,10 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         prefs = getSharedPreferences("remote", MODE_PRIVATE);
+        if (!prefs.getBoolean("custom_home_reset_v28", false)) {
+            // An earlier workaround switched Home to Amazon's; the Home app now answers reliably.
+            prefs.edit().putBoolean("custom_home", true).putBoolean("custom_home_reset_v28", true).apply();
+        }
         getWindow().setStatusBarColor(Theme.BG);
         getWindow().setNavigationBarColor(Theme.BG);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
