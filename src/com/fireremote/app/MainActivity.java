@@ -817,33 +817,10 @@ public class MainActivity extends Activity {
             a.shell("input keyevent " + (up ? 24 : 25));
             return;
         }
-        final int code = up ? 24 : 25;
-        final String fallback = up ? "volume_up" : "volume_down";
-        send(new TvCall() {
-            @Override
-            public LightningClient.Response run(LightningClient c) throws IOException {
-                // The ad-free Home app on the TV can press volume for us (no setup on the phone).
-                String reply = askHomeApp(c.host, "KEY " + code);
-                if ("OK".equals(reply)) return new LightningClient.Response(200, "");
-                LightningClient.Response r = c.key(fallback); // works on some models
-                if (!"NOSHELL".equals(reply)) {
-                    onUi(new Runnable() {
-                        @Override
-                        public void run() {
-                            showVolumeHint(false);
-                        }
-                    });
-                } else {
-                    onUi(new Runnable() {
-                        @Override
-                        public void run() {
-                            showVolumeHint(true);
-                        }
-                    });
-                }
-                return r;
-            }
-        }, null);
+        // Fire OS's remote service can't change volume, and Fire OS 7.7 won't let apps on the TV do it
+        // either, so volume needs this phone's own link (Volume & typing link).
+        key(up ? "volume_up" : "volume_down"); // harmless; works on some models
+        showVolumeHint(false);
     }
 
     /** homeAppInstalled: the TV's Home app answered but its instant link isn't set up yet. */
@@ -851,21 +828,15 @@ public class MainActivity extends Activity {
         if (homeAppInstalled) {
             if (volumeHintShown) return;
             volumeHintShown = true;
-            new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
-                    .setTitle("Volume needs one more step")
-                    .setMessage("On the TV, open Home's Settings (the gear) and choose \"Instant Home & volume\". "
-                            + "After that, these volume buttons work.")
-                    .setPositiveButton("OK", null)
-                    .show();
             return;
         }
         if (!volumeHintShown && tv != null && tv.token() != null) {
             volumeHintShown = true;
             new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
                     .setTitle("Volume needs one more step")
-                    .setMessage("The Fire TV's code connection doesn't control volume — Amazon's own remote app "
-                            + "has the same limit. Set up the volume & typing link (about a minute, using this "
-                            + "app's touchpad) and the volume buttons will work.")
+                    .setMessage("Amazon's remote connection can't change volume (Amazon's own app can't either). "
+                            + "Set up the volume & typing link once: ADB debugging is already on from the clean-up, "
+                            + "so just tap Set up, then Connect, and choose \"Always allow\" on the TV.")
                     .setPositiveButton("Set up", new DialogInterface.OnClickListener() {
                         @Override
                         public void onClick(DialogInterface dialog, int which) {
