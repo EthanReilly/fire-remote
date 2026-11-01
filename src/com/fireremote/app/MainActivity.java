@@ -813,7 +813,48 @@ public class MainActivity extends Activity {
             a.shell("input keyevent " + (up ? 24 : 25));
             return;
         }
-        key(up ? "volume_up" : "volume_down"); // harmless; works on some models
+        final int code = up ? 24 : 25;
+        final String fallback = up ? "volume_up" : "volume_down";
+        send(new TvCall() {
+            @Override
+            public LightningClient.Response run(LightningClient c) throws IOException {
+                // The ad-free Home app on the TV can press volume for us (no setup on the phone).
+                String reply = askHomeApp(c.host, "KEY " + code);
+                if ("OK".equals(reply)) return new LightningClient.Response(200, "");
+                LightningClient.Response r = c.key(fallback); // works on some models
+                if (!"NOSHELL".equals(reply)) {
+                    onUi(new Runnable() {
+                        @Override
+                        public void run() {
+                            showVolumeHint(false);
+                        }
+                    });
+                } else {
+                    onUi(new Runnable() {
+                        @Override
+                        public void run() {
+                            showVolumeHint(true);
+                        }
+                    });
+                }
+                return r;
+            }
+        }, null);
+    }
+
+    /** homeAppInstalled: the TV's Home app answered but its instant link isn't set up yet. */
+    private void showVolumeHint(boolean homeAppInstalled) {
+        if (homeAppInstalled) {
+            if (volumeHintShown) return;
+            volumeHintShown = true;
+            new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                    .setTitle("Volume needs one more step")
+                    .setMessage("On the TV, open Home's Settings (the gear) and choose \"Instant Home & volume\". "
+                            + "After that, these volume buttons work.")
+                    .setPositiveButton("OK", null)
+                    .show();
+            return;
+        }
         if (!volumeHintShown && tv != null && tv.token() != null) {
             volumeHintShown = true;
             new AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
@@ -866,6 +907,25 @@ public class MainActivity extends Activity {
      * Asks the ad-free Home app on the TV to open itself. Returns false if it isn't installed or
      * its Home button setting is off, so the caller can press Amazon's Home instead.
      */
+    /** Sends one line to the ad-free Home app on the TV; returns its reply, or null if it didn't answer. */
+    private static String askHomeApp(String host, String command) {
+        java.net.Socket s = new java.net.Socket();
+        try {
+            s.connect(new java.net.InetSocketAddress(host, CUSTOM_HOME_PORT), 600);
+            s.setSoTimeout(1500);
+            java.io.OutputStream out = s.getOutputStream();
+            out.write((command + "\n").getBytes("UTF-8"));
+            out.flush();
+            String reply = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(s.getInputStream(), "UTF-8")).readLine();
+            return reply == null ? null : reply.trim();
+        } catch (Exception e) {
+            return null;
+        } finally {
+            try { s.close(); } catch (Exception ignored) { }
+        }
+    }
+
     private static boolean askCustomHome(String host) {
         java.net.Socket s = new java.net.Socket();
         try {
